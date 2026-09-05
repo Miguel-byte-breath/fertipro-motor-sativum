@@ -1,9 +1,8 @@
 /**
  * api/sativum-report.js — endpoint serverless :export-report
  *
- * URL definitiva (rewrite en vercel.json pendiente de añadir, mismo patrón
- * con `:` escapado que :calculate-npk/:group-crop-units — se añade cuando
- * esto esté validado en preview):
+ * URL definitiva (rewrite ya presente en vercel.json, mismo patrón
+ * con `:` escapado que :calculate-npk/:group-crop-units):
  *   POST /v1/sativum/fertilization-plans:export-report → /api/sativum-report
  *
  * Genera el Excel del plan de abonado reutilizando construirWorkbookPlanAbonado()
