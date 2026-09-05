@@ -221,7 +221,11 @@ function crearServidor() {
       description:
         'Agrupa Unidades de Cultivo de Visual (obtenidas antes con getCropUnits, listas ' +
         '["varieties","persons","sigpac"]) en planes de abonado por titular — sin calcular ' +
-        'NPK. No llama a Visual: recibe las UC ya leídas por el agente.',
+        'NPK. No llama a Visual: recibe las UC ya leídas por el agente. IMPORTANTE: al llamar ' +
+        'a getCropUnits, pasa SIEMPRE includeGeom:true ademas de esas listas -- sin geometria, ' +
+        'cada grupo devuelto sale con recintosWkt:[] y centroid:null (sin ningun error visible), ' +
+        'y esto se propaga en silencio hasta el Excel final de export_report, cuya hoja ' +
+        '"Recintos (WKT)" saldria vacia.',
       inputSchema: {
         cropUnits: z
           .array(z.record(z.any()))
