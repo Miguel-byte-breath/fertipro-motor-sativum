@@ -551,6 +551,29 @@ function crearServidor() {
               'la geometría exacta (ver importExcel.js: sin esta hoja, el usuario tiene que ' +
               'volver a cargar la parcela en el mapa a mano).',
           ),
+        unidadesCultivo: z
+          .array(z.object({
+            idFinca: z.union([z.string(), z.number()]).optional(),
+            superficieHa: z.number().optional(),
+            variedad: z.string().optional(),
+            municipio: z.string().optional(),
+            sistemaExplotacion: z.string().optional(),
+          }))
+          .optional()
+          .describe(
+            'Trazabilidad: una entrada por Unidad de Cultivo (UC) de Visual vinculada a este ' +
+              'plan -- rellena la hoja opcional "Unidades de Cultivo" del Excel, para que el ' +
+              'fichero sea autocontenido (qué UC(s) de Visual respaldan este balance, sin tener ' +
+              'que volver a consultar Visual). Si el plan viene de group_crop_units, usa su ' +
+              'respuesta: idFincas (uno por elemento del array -> una entrada aquí por cada ' +
+              'idFinca), y repite en cada entrada los campos compartidos del grupo (variety -> ' +
+              'variedad, municipio, cropSystem -> sistemaExplotacion); superficieHa por UC solo ' +
+              'si la tienes desagregada (ej. desde recintosWkt del propio grupo, cruzando por ' +
+              '"UC ${idFinca}"), si no, déjala vacía -- no repartas totalSurface a ojo entre las ' +
+              'UC. Si el plan es de una sola UC (sin pasar por group_crop_units), basta una ' +
+              'entrada con su idFinca. Si se omite, no se crea esta hoja (compatible con planes ' +
+              'anteriores).',
+          ),
         format: z.literal('xlsx').optional(),
       },
     },

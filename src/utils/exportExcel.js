@@ -194,6 +194,9 @@ const SOIL_TYPE_LABEL = {
  * @param {string}  [opts.adjustedNutrient]  — 'N' | 'P' | 'K'
  * @param {object}  [opts.cultivoAnterior]   — objeto cultivo precedente
  * @param {object}  [opts.cultivoAnteriorParams] — { cropYield, laboreo, recogeResiduos, quemaResiduos }
+ * @param {Array}   [opts.unidadesCultivo]   — [{ idFinca, superficieHa, variedad, municipio,
+ *   sistemaExplotacion }], una fila por Unidad de Cultivo (Visual) vinculada a este plan — hoja
+ *   opcional "Unidades de Cultivo", cambio aditivo
  * @param {string}  [opts.baseName]
  */
 export async function construirWorkbookPlanAbonado({
@@ -224,6 +227,10 @@ export async function construirWorkbookPlanAbonado({
   medidasGEI = [],              // códigos SIEX seleccionados (Anexo V RD 1051/2022)
   recintosWkt = [],             // [{ ref, fichero, fila, superficieHa, wkt }], uno por recinto (nunca
                                  // geometría fusionada) — hoja opcional "Recintos (WKT)", cambio aditivo
+  unidadesCultivo = [],          // [{ idFinca, superficieHa, variedad, municipio, sistemaExplotacion }],
+                                 // una fila por Unidad de Cultivo (Visual) vinculada a este plan — hoja
+                                 // opcional "Unidades de Cultivo", cambio aditivo (6-sep-2026, ver
+                                 // project memory)
   baseName = 'fertipro_plan_abonado',
 }) {
   // Compatibilidad: planItems tiene prioridad sobre fertilizadoresManuales
@@ -518,6 +525,9 @@ export async function construirWorkbookPlanAbonado({
     ...(recintosWkt.length > 0 ? [
       { 'Campo': 'Geometría (WKT)', 'Valor': 'EPSG:4326 (WGS84), lon lat — un recinto por fila, nunca geometría fusionada' },
     ] : []),
+    ...(unidadesCultivo.length > 0 ? [
+      { 'Campo': 'Unidades de Cultivo (Visual)', 'Valor': 'Ver hoja "Unidades de Cultivo" — IDs de las UC de Visual vinculadas a este plan' },
+    ] : []),
     { 'Campo': 'Fecha generación',   'Valor': new Date().toISOString() },
     { 'Campo': 'Unidades NPK',       'Valor': 'kg/ha — N en elemento puro; P y K en forma óxido (P₂O₅, K₂O)' },
     { 'Campo': 'Conversión P→P₂O₅', 'Valor': '× 2.2914' },
@@ -559,12 +569,33 @@ export async function construirWorkbookPlanAbonado({
     wsRecintosWkt['!cols'] = [{ wch: 24 }, { wch: 24 }, { wch: 12 }, { wch: 16 }, { wch: 60 }]
   }
 
+  // ── Hoja 5 (opcional): Unidades de Cultivo — trazabilidad Visual ────────
+  // Cambio aditivo (6-sep-2026): si el plan agrupa/referencia una o varias UC
+  // de Visual (típicamente vía group_crop_units en el MCP), esta hoja deja
+  // constancia de qué idFinca(s) quedaron vinculadas a este balance concreto
+  // — sin esto, el Excel no dice nada sobre su origen en Visual. Si no se pasa
+  // ninguna UC (plan manual, o Excel anterior a esta hoja), no se crea —
+  // importarPlanDesdeExcel() sigue funcionando igual que hasta ahora.
+  let wsUnidadesCultivo = null
+  if (unidadesCultivo.length > 0) {
+    const ucRows = unidadesCultivo.map((u) => ({
+      'ID Unidad de Cultivo (Visual)': u.idFinca ?? null,
+      'Superficie (ha)':               u.superficieHa ?? null,
+      'Variedad':                      u.variedad ?? null,
+      'Municipio':                     u.municipio ?? null,
+      'Sistema de explotación':        u.sistemaExplotacion ?? null,
+    }))
+    wsUnidadesCultivo = XLSX.utils.json_to_sheet(ucRows)
+    wsUnidadesCultivo['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 22 }]
+  }
+
   // ── Ensamblar y descargar ───────────────────────────────────────────────
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, wsPlan,  'Plan de Abonado')
   XLSX.utils.book_append_sheet(wb, wsFert,  'Fertilizantes')
   XLSX.utils.book_append_sheet(wb, wsNotas, 'Notas')
   if (wsRecintosWkt) XLSX.utils.book_append_sheet(wb, wsRecintosWkt, 'Recintos (WKT)')
+  if (wsUnidadesCultivo) XLSX.utils.book_append_sheet(wb, wsUnidadesCultivo, 'Unidades de Cultivo')
 
   return wb
 }
