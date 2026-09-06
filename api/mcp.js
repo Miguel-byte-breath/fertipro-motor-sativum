@@ -182,12 +182,23 @@ function crearServidor() {
         '(1) si la parcela es de secano o regadío (ver water.dotacionM3 en items, más abajo); ' +
         '(2) si hay cultivo precedente relevante (precedingCrop.crop, resuelto con search_crop ' +
         'igual que currentCrop.crop) y, si lo hay, si hubo laboreo tras su cosecha ' +
-        '(precedingCrop.tillageAfterHarvest) y qué se hizo con sus residuos ' +
+        '(precedingCrop.tillageAfterHarvest), qué se hizo con sus residuos ' +
         '(precedingCrop.collectResidues/burnResidues/residuesInFieldPct — si se omiten, no se ' +
-        'asume ningún efecto de residuo del cultivo anterior); (3) qué estrategia aplicar ' +
-        '(strategy: SUFFICIENCY|REDUCED|MAINTENANCE|MAXIMUM — si se omite, se usa MAINTENANCE ' +
-        'en silencio, que es el criterio correcto SOLO si no hay analítica de suelo real). No ' +
-        'asumir ninguno de estos 3 valores sin preguntar, igual que ya se hace con secano/regadío.',
+        'asume ningún efecto de residuo del cultivo anterior) y su producción esperada ' +
+        '(precedingCrop.targetYield — si se omite, se asume el yieldMedium del catálogo, que ' +
+        'puede no representar la campaña real del cultivo anterior); (3) la producción ' +
+        'esperada del cultivo ACTUAL (currentCrop.targetYield — mismo criterio: si se omite, ' +
+        'se asume el yieldMedium del catálogo Sativum en vez del rendimiento real de la ' +
+        'parcela); (4) si hay riego, el origen del agua (SIEX: superficial o subterránea — ' +
+        'necesario para saber si aplica el rescate ArcGIS de NO3/K de ' +
+        'estimate_soil_water_arcgis, exclusivo de origen subterráneo, y para poder ' +
+        'documentarlo luego en export_report.riego.fuenteLabel); (5) qué estrategia de ' +
+        'fertilización quiere (strategy: SUFFICIENCY|REDUCED|MAINTENANCE|MAXIMUM) — pregunta ' +
+        'esto ANTES de pedir analítica de suelo, no al revés: si la estrategia elegida ' +
+        'necesita analítica real y el usuario no la tiene, dilo con honestidad explícita ' +
+        '(p.ej. "con los datos que tienes solo puedo aplicar mantenimiento, ¿lo confirmas?") ' +
+        'en vez de sustituir MAINTENANCE en silencio. No asumir ninguno de estos 5 valores ' +
+        'sin preguntar.',
       inputSchema: {
         items: z
           .array(z.record(z.any()))
@@ -335,6 +346,35 @@ function crearServidor() {
               'filas "Cultivo"/"Cultivo ID Sativum"/etc. del Excel salen vacías y el reimport en ' +
               'la web no puede autoseleccionar el cultivo.',
           ),
+        cultivoAnterior: z
+          .record(z.any())
+          .optional()
+          .describe(
+            'Cultivo precedente (opcional). Mismo objeto de catálogo Sativum que ' +
+              'precedingCrop.crop en calculate_npk, si lo hubo. Sin este campo, el bloque ' +
+              'completo "Cultivo precedente" del Excel no aparece (ni siquiera el nombre).',
+          ),
+        cultivoAnteriorParams: z
+          .record(z.any())
+          .optional()
+          .describe(
+            '{ cropYield?, laboreo?, recogeResiduos?, quemaResiduos?, fRes? } del cultivo ' +
+              'precedente -- traducidos de precedingCrop.targetYield/tillageAfterHarvest/' +
+              'collectResidues/burnResidues/residuesInFieldPct que ya usaste en calculate_npk. ' +
+              'Sin este campo, aunque envíes cultivoAnterior, las filas "Rendimiento ' +
+              'precedente"/"Laboreo tras cosecha"/"Residuos precedente"/"F_res precedente" del ' +
+              'Excel salen en blanco.',
+          ),
+        calculo: z
+          .record(z.any())
+          .optional()
+          .describe(
+            '{ strategy?, cropYield?, recogeResiduos?, quemaResiduos? } del cultivo ACTUAL -- ' +
+              'mismos valores que ya usaste en calculate_npk (strategy, currentCrop.targetYield, ' +
+              'currentCrop.collectResidues/burnResidues). Sin este campo, "Estrategia"/' +
+              '"Rendimiento objetivo" (si difiere del catálogo)/"Residuos recogidos" del Excel ' +
+              'no reflejan lo que realmente se calculó.',
+          ),
         npk: z
           .record(z.any())
           .describe(
@@ -379,10 +419,16 @@ function crearServidor() {
           .record(z.any())
           .optional()
           .describe(
-            '{ sistemaExplotacion: "regadio"|"secano", dotacionM3?, no3MgL?, pMgL?, kMgL? } — ' +
-              'sistemaExplotacion determina la línea "Sistema de explotación" del Excel y si se ' +
-              'muestran los kg/ha cubiertos por riego (solo si es "regadio" y dotacionM3 > 0). ' +
-              'No es el mismo objeto que water en calculate_npk: hay que traducirlo ' +
+            '{ sistemaExplotacion: "regadio"|"secano", dotacionM3?, no3MgL?, pMgL?, kMgL?, ' +
+              'fuenteLabel?, fuenteId? } — sistemaExplotacion determina la línea "Sistema de ' +
+              'explotación" del Excel y si se muestran los kg/ha cubiertos por riego (solo si ' +
+              'es "regadio" y dotacionM3 > 0). fuenteLabel (texto libre, ej. "Superficial (río, ' +
+              'canal, embalse)" o "Subterránea") o fuenteId (código SIEX) rellenan "Origen del ' +
+              'agua (SIEX)" -- sin ninguno de los dos, sale "Sin especificar" aunque el usuario ' +
+              'sí haya dicho su origen. Si usaste el rescate ArcGIS de ' +
+              'estimate_soil_water_arcgis (arcgisNo3MgL/arcgisKMgL, solo válido con origen ' +
+              'subterráneo), pasa aquí el valor ya resuelto en no3MgL/kMgL, no el original ' +
+              'vacío. No es el mismo objeto que water en calculate_npk: hay que traducirlo ' +
               'explícitamente al encadenar los dos tools.',
           ),
         titular: z.record(z.any()).optional().describe('{ nifCif, ... } — para el nombre de fichero.'),
