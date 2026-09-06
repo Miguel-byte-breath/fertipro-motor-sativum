@@ -39,6 +39,7 @@ import groupCropUnitsHandler from './sativum-group.js'
 import exportReportHandler from './sativum-report.js'
 import estimateSoilWaterArcgisHandler from './sativum-arcgis-npk.js'
 import searchCropHandler from './sativum-crops-search.js'
+import { sanitizarNombreFichero } from '../src/utils/slugify.js'
 
 // ---------------------------------------------------------------------
 // invocarHandler: llama a un handler de Vercel (req, res) => void con un
@@ -159,6 +160,28 @@ function validarCultivoCatalogo(cultivo) {
   return []
 }
 
+// Nombre de fichero real para el recurso que devuelve export_report -- hasta
+// ahora (6-sep-2026, hallazgo de Miguel) el `uri` del bloque `resource` era
+// un literal fijo ('plan-abonado.xlsx'), así que el nombre calculado en
+// api/sativum-report.js::calcularBaseName() (NIF/nombreRazonSocial + nombrePlan)
+// nunca llegaba a un cliente MCP -- solo se veía vía el endpoint HTTP directo
+// (Content-Disposition), que el MCP no usa. Misma fórmula que calcularBaseName(),
+// replicada aquí (no importada de sativum-report.js) para no acoplar este
+// fichero a uno que ya tiene su propio contrato HTTP cerrado -- reutiliza
+// sanitizarNombreFichero de src/utils/slugify.js, la misma que ya usan tanto
+// calcular.js (fertipro-test/plantilla) como la propia web de producción.
+function calcularNombreArchivoMcp({ titular, nombrePlan } = {}) {
+  const plan = (nombrePlan ?? '').trim()
+  const identificadorTitular =
+    titular?.nifCif?.trim() || titular?.nombreRazonSocial?.trim() || null
+  const base = plan
+    ? (identificadorTitular
+        ? `${sanitizarNombreFichero(identificadorTitular)}_${sanitizarNombreFichero(plan)}`
+        : sanitizarNombreFichero(plan))
+    : 'fertipro_plan_abonado'
+  return `${base}_Sativum`
+}
+
 // ---------------------------------------------------------------------
 // Definición del servidor MCP y sus 3 tools. Los inputSchema son
 // deliberadamente permisivos (z.record(z.any()) en los objetos anidados):
@@ -181,7 +204,13 @@ function crearServidor() {
         'status ("OK" o "BLOCKED") con warnings — no hace falta que todos los items estén ' +
         'completos para poder calcular los demás. Antes de calcular, pregunta SIEMPRE: ' +
         '(1) si la parcela es de secano o regadío (ver water.dotacionM3 en items, más abajo); ' +
-        '(2) si hay cultivo precedente relevante (precedingCrop.crop, resuelto con search_crop ' +
+        '(2) si hay cultivo precedente relevante. OJO con los cultivos leñosos/permanentes ' +
+        '(currentCrop.crop.plantSpeciesGroup === "TREES" u otro perenne): el motor SÍ aplica ' +
+        'precedingCrop igual que a cualquier otro cultivo si se lo pasas -- no lo descartes tú ' +
+        'por tu cuenta asumiendo que "un leñoso no tiene precedente". Pregunta primero si esta ' +
+        'plantación es NUEVA/reciente (sustituyó a otro cultivo, aunque sea de hace 1-2 años) o ' +
+        'si es una plantación ya establecida sin cambio de cultivo reciente -- solo en el primer ' +
+        'caso tiene sentido pedir los datos de precedingCrop.crop (resuelto con search_crop ' +
         'igual que currentCrop.crop) y, si lo hay, si hubo laboreo tras su cosecha ' +
         '(precedingCrop.tillageAfterHarvest), qué se hizo con sus residuos ' +
         '(precedingCrop.collectResidues/burnResidues/residuesInFieldPct — si se omiten, no se ' +
@@ -191,9 +220,14 @@ function crearServidor() {
         'esperada del cultivo ACTUAL (currentCrop.targetYield — mismo criterio: si se omite, ' +
         'se asume el yieldMedium del catálogo Sativum en vez del rendimiento real de la ' +
         'parcela); (4) si hay riego, el origen del agua (SIEX: superficial o subterránea — ' +
-        'necesario para saber si aplica el rescate ArcGIS de NO3/K de ' +
-        'estimate_soil_water_arcgis, exclusivo de origen subterráneo, y para poder ' +
-        'documentarlo luego en export_report.riego.fuenteLabel); (5) qué estrategia de ' +
+        'necesario para documentarlo luego en export_report.riego.fuenteLabel) Y, SIEMPRE, si ' +
+        'tiene analítica real de agua de riego (water.no3MgL/pMgL/kMgL, mg/L) -- esto aplica en ' +
+        'CUALQUIER origen, superficial o subterráneo, no solo cuando hay rescate ArcGIS: no lo ' +
+        'des por sabido solo porque ya preguntaste el origen. El rescate ArcGIS de ' +
+        'estimate_soil_water_arcgis (arcgisNo3MgL/arcgisKMgL) es exclusivo de origen ' +
+        'subterráneo y NUNCA sustituye la pregunta por analítica real -- pregúntala primero, ' +
+        'igual que con el suelo, y usa ArcGIS solo si falta el dato y el origen lo permite; ' +
+        '(5) qué estrategia de ' +
         'fertilización quiere (strategy: SUFFICIENCY|REDUCED|MAINTENANCE|MAXIMUM) — pregunta ' +
         'esto ANTES de pedir analítica de suelo, no al revés: si la estrategia elegida ' +
         'necesita analítica real y el usuario no la tiene, dilo con honestidad explícita ' +
@@ -494,8 +528,9 @@ function crearServidor() {
       const warningsCultivo = validarCultivoCatalogo(body.cultivo)
       const bodyNormalizado = { ...body, npk: npkPlano }
       const r = await invocarHandler(exportReportHandler, bodyNormalizado)
+      const nombreArchivo = calcularNombreArchivoMcp(body)
       return resultadoArchivo(r, {
-        uri: 'sativum://export-report/plan-abonado.xlsx',
+        uri: `sativum://export-report/${nombreArchivo}.xlsx`,
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         warnings: [...warningsCultivo, ...warningsNpk],
       })
