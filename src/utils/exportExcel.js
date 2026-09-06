@@ -590,12 +590,15 @@ export async function construirWorkbookPlanAbonado({
   }
 
   // ── Ensamblar y descargar ───────────────────────────────────────────────
+  // Orden de pestañas alineado con fertipro-test/plantilla (exportarPlanSativum.js/
+  // exportarPlanFertipro.js): "Notas" siempre la última, después de las hojas
+  // opcionales — verificado contra ese repo el 6-sep-2026 antes de reordenar.
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, wsPlan,  'Plan de Abonado')
   XLSX.utils.book_append_sheet(wb, wsFert,  'Fertilizantes')
-  XLSX.utils.book_append_sheet(wb, wsNotas, 'Notas')
   if (wsRecintosWkt) XLSX.utils.book_append_sheet(wb, wsRecintosWkt, 'Recintos (WKT)')
   if (wsUnidadesCultivo) XLSX.utils.book_append_sheet(wb, wsUnidadesCultivo, 'Unidades de Cultivo')
+  XLSX.utils.book_append_sheet(wb, wsNotas, 'Notas')
 
   return wb
 }
