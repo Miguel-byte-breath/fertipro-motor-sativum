@@ -47,11 +47,23 @@ function sendError(res, { httpStatus, key, message, params = {}, details = [] })
 // Misma fórmula que handleExportarPlan/handleExportarPlanPdf en App.jsx —
 // no se toca esa lógica, se replica aquí para que el servidor no dependa de
 // que el cliente calcule bien el nombre.
+//
+// Fallback de identificador de titular (6-sep-2026, ver project memory
+// project_fertipro_mcp_visual_endpoint.md): a diferencia del repo local
+// `plantilla` (que ante un NIF ausente cae al literal "SIN-NIF", porque ahí
+// el dato siempre debería estar ya en la plantilla rellenada a mano), aquí
+// el NIF puede faltar de verdad porque Visual (getCropUnits/readCropUnit)
+// no siempre lo expone — en ese caso se usa el nombre/razón social del
+// titular como identificador de rescate en vez de omitir el segmento en
+// silencio, igual que ya propone `titular` en la description de export_report
+// del MCP (api/mcp.js).
 function calcularBaseName({ titular, nombrePlan }) {
   const plan = (nombrePlan ?? '').trim()
+  const identificadorTitular =
+    titular?.nifCif?.trim() || titular?.nombreRazonSocial?.trim() || null
   const base = plan
-    ? (titular?.nifCif?.trim()
-        ? `${sanitizarNombreFichero(titular.nifCif)}_${sanitizarNombreFichero(plan)}`
+    ? (identificadorTitular
+        ? `${sanitizarNombreFichero(identificadorTitular)}_${sanitizarNombreFichero(plan)}`
         : sanitizarNombreFichero(plan))
     : 'fertipro_plan_abonado'
   return `${base}_Sativum`
