@@ -175,8 +175,9 @@ function crearServidor() {
     {
       title: 'Calcular NPK (Sativum)',
       description:
-        'Calcula el balance de N/P2O5/K2O (bruto y neto de riego) para un lote de unidades ' +
-        'de cultivo, vía el motor ITACyL/Sativum. Cada item del lote devuelve su propio ' +
+        'Calcula el balance de N/P/K (elemental -- NUNCA óxidos P2O5/K2O, aunque el nombre ' +
+        'de la tool diga "NPK" -- bruto y neto de riego) para un lote de unidades de ' +
+        'cultivo, vía el motor ITACyL/Sativum. Cada item del lote devuelve su propio ' +
         'status ("OK" o "BLOCKED") con warnings — no hace falta que todos los items estén ' +
         'completos para poder calcular los demás. Antes de calcular, pregunta SIEMPRE: ' +
         '(1) si la parcela es de secano o regadío (ver water.dotacionM3 en items, más abajo); ' +
@@ -197,8 +198,13 @@ function crearServidor() {
         'esto ANTES de pedir analítica de suelo, no al revés: si la estrategia elegida ' +
         'necesita analítica real y el usuario no la tiene, dilo con honestidad explícita ' +
         '(p.ej. "con los datos que tienes solo puedo aplicar mantenimiento, ¿lo confirmas?") ' +
-        'en vez de sustituir MAINTENANCE en silencio. No asumir ninguno de estos 5 valores ' +
-        'sin preguntar.',
+        'en vez de sustituir MAINTENANCE en silencio; (6) fecha de inicio y fin del ciclo de ' +
+        'cultivo actual (YYYY-MM-DD). Esta tool NO las usa para el cálculo NPK en sí -- pero ' +
+        'hay que preguntarlas y conservarlas AHORA (no esperar a export_report) para poder ' +
+        'pasarlas luego en export_report.fechaInicioCiclo/fechaFinCiclo, de donde la app en ' +
+        'producción deriva el año 0/1/2 de la tasa de mineralización de enmiendas orgánicas ' +
+        '(estiércol/purín) al reimportar el plan -- sin este dato, esa lógica ya existente en ' +
+        'la app no se puede aplicar bien. No asumir ninguno de estos 6 valores sin preguntar.',
       inputSchema: {
         items: z
           .array(z.record(z.any()))
@@ -212,7 +218,11 @@ function crearServidor() {
               'enviar water.dotacionM3: 0 (anula explícitamente el catálogo, no se calcula ' +
               'aporte por riego); regadío con dotación conocida → enviar water.dotacionM3: ' +
               '<m³/ha>; regadío sin dato conocido → omitir dotacionM3 y dejar el valor por ' +
-              'defecto del catálogo.',
+              'defecto del catálogo. fechaInicioCiclo/fechaFinCiclo (YYYY-MM-DD, opcionales): ' +
+              'esta tool las ignora por completo para el cálculo -- inclúyelas aquí solo como ' +
+              'conveniencia de registro si ya las preguntaste; lo que de verdad hace falta es ' +
+              'reenviarlas después en export_report.fechaInicioCiclo/fechaFinCiclo (ver la ' +
+              'description de esa tool).',
           ),
         pageIndex: z.number().int().min(0).optional(),
         pageSize: z.number().int().min(1).max(100).optional(),
@@ -431,8 +441,33 @@ function crearServidor() {
               'vacío. No es el mismo objeto que water en calculate_npk: hay que traducirlo ' +
               'explícitamente al encadenar los dos tools.',
           ),
-        titular: z.record(z.any()).optional().describe('{ nifCif, ... } — para el nombre de fichero.'),
-        nombrePlan: z.string().optional(),
+        titular: z
+          .record(z.any())
+          .optional()
+          .describe(
+            '{ tipo?: "fisica"|"juridica", nombreRazonSocial?, nifCif? } -- rellena el bloque ' +
+              '"Titular de la explotación" del Excel y el nombre del fichero de salida. NIF/CIF ' +
+              'es preferente, pero Visual (getCropUnits/readCropUnit) no siempre lo expone -- ' +
+              'cuando falte, envía SIEMPRE nombreRazonSocial (nombre de la persona física o ' +
+              'razón social) como identificador de rescate: sin ninguno de los dos, el fichero ' +
+              'se nombra "fertipro_plan_abonado_Sativum", sin ningún identificador de titular.',
+          ),
+        nombrePlan: z
+          .string()
+          .optional()
+          .describe(
+            'Nombre del plan de abonado. Convención recomendada (misma que usa el repo local ' +
+              '`plantilla` para lotes agrupados, ver agrupar.js/calcularNombrePlan()): ' +
+              '"AAAA-MUNICIPIO-CULTIVO-NN" (ej. "2026-TITAGUAS-ALMENDRO-01"). AAAA = año de ' +
+              'fechaFinCiclo (no el año actual); MUNICIPIO = el de la unidad de cultivo ' +
+              '(Visual), en mayúsculas; CULTIVO = nombre corto del cultivo actual; NN = ' +
+              'correlativo de 2 dígitos, "01" por defecto -- súbelo solo si en esta misma ' +
+              'conversación generas más de un plan para el mismo municipio+cultivo (para no ' +
+              'repetir nombre). A diferencia de `plantilla` (que calcula NN agrupando filas de ' +
+              'un lote), aquí cada export_report es siempre un único plan -- llevar la cuenta ' +
+              'de NN, si hace falta, es responsabilidad tuya dentro de la conversación. Si se ' +
+              'omite, el fichero queda sin nombre de plan propio.',
+          ),
         fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido, debe ser YYYY-MM-DD (ISO).').optional().describe('Fecha del plan (YYYY-MM-DD, ISO estricto). Si se omite, se usa la fecha actual.'),
         fechaInicioCiclo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido, debe ser YYYY-MM-DD (ISO).').optional().describe('Inicio del ciclo de cultivo (YYYY-MM-DD, ISO estricto).'),
         fechaFinCiclo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido, debe ser YYYY-MM-DD (ISO).').optional().describe('Fin del ciclo de cultivo (YYYY-MM-DD, ISO estricto).'),
