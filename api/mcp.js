@@ -170,6 +170,21 @@ function validarCultivoCatalogo(cultivo) {
 // fichero a uno que ya tiene su propio contrato HTTP cerrado -- reutiliza
 // sanitizarNombreFichero de src/utils/slugify.js, la misma que ya usan tanto
 // calcular.js (fertipro-test/plantilla) como la propia web de producción.
+//
+// espaciosAGuionBajo (6-sep-2026, 2º hallazgo): sanitizarNombreFichero() NO
+// toca espacios (a propósito, para que los ficheros de `salidas/` en
+// plantilla/la descarga de la web se vean "bonitos" con el nombre tal cual,
+// ej. "PARTIDA DEL AMET SAT"). Pero aquí el resultado va embebido en la
+// `uri` de un recurso MCP, y un espacio crudo no es válido dentro de una URI
+// (RFC 3986) -- posible causa de que el cliente MCP no respetara el nombre
+// calculado (Miguel probó y el NIF/titular apareció al final, no al
+// principio como se construye aquí). Se sustituyen los espacios por guión
+// bajo SOLO en este punto, nunca en calcularBaseName()/sanitizarNombreFichero
+// (que siguen igual para la web y para plantilla).
+function espaciosAGuionBajo(s) {
+  return s.replace(/\s+/g, '_')
+}
+
 function calcularNombreArchivoMcp({ titular, nombrePlan } = {}) {
   const plan = (nombrePlan ?? '').trim()
   const identificadorTitular =
@@ -179,7 +194,7 @@ function calcularNombreArchivoMcp({ titular, nombrePlan } = {}) {
         ? `${sanitizarNombreFichero(identificadorTitular)}_${sanitizarNombreFichero(plan)}`
         : sanitizarNombreFichero(plan))
     : 'fertipro_plan_abonado'
-  return `${base}_Sativum`
+  return espaciosAGuionBajo(`${base}_Sativum`)
 }
 
 // ---------------------------------------------------------------------
@@ -207,14 +222,23 @@ function crearServidor() {
         '(2) si hay cultivo precedente relevante. OJO con los cultivos leñosos/permanentes ' +
         '(currentCrop.crop.plantSpeciesGroup === "TREES" u otro perenne): el motor SÍ aplica ' +
         'precedingCrop igual que a cualquier otro cultivo si se lo pasas -- no lo descartes tú ' +
-        'por tu cuenta asumiendo que "un leñoso no tiene precedente". Pregunta primero si esta ' +
-        'plantación es NUEVA/reciente (sustituyó a otro cultivo, aunque sea de hace 1-2 años) o ' +
-        'si es una plantación ya establecida sin cambio de cultivo reciente -- solo en el primer ' +
-        'caso tiene sentido pedir los datos de precedingCrop.crop (resuelto con search_crop ' +
-        'igual que currentCrop.crop) y, si lo hay, si hubo laboreo tras su cosecha ' +
-        '(precedingCrop.tillageAfterHarvest), qué se hizo con sus residuos ' +
-        '(precedingCrop.collectResidues/burnResidues/residuesInFieldPct — si se omiten, no se ' +
-        'asume ningún efecto de residuo del cultivo anterior) y su producción esperada ' +
+        'por tu cuenta asumiendo que "un leñoso no tiene precedente". NO preguntes si la ' +
+        'plantación es nueva o ya establecida -- esa distinción no cambia nada en el cálculo y ' +
+        'solo confunde al usuario (validado con Miguel, 6-sep-2026: "arrancado para replantar" ' +
+        'resultó una pregunta rara). En vez de eso, para un leñoso pregunta directamente si hubo ' +
+        'alguna gestión de residuos de la operación anterior en esa parcela (poda, o el arranque ' +
+        'de una plantación previa -- normalmente del MISMO cultivo que currentCrop.crop, así que ' +
+        'NO hace falta resolverlo de nuevo con search_crop: reutiliza literalmente el mismo ' +
+        'objeto en precedingCrop.crop) y, si los hay, su incorporación ' +
+        '(precedingCrop.collectResidues/burnResidues) y el laboreo tras esa operación ' +
+        '(precedingCrop.tillageAfterHarvest). Para cultivos NO leñosos (rotación anual real, ' +
+        'ej. patata tras lechuga), sigue preguntando también por precedingCrop.crop (resuelto ' +
+        'con search_crop igual que currentCrop.crop), pues ahí sí suele ser un cultivo distinto. ' +
+        'Si hay residuos incorporados (collectResidues=true), pregunta ADEMÁS si quiere el % por ' +
+        'defecto del catálogo Sativum para ese cultivo (omitir residuesInFieldPct, el motor lo ' +
+        'aplica solo) o prefiere indicar un valor concreto 1-100 en residuesInFieldPct -- si se ' +
+        'omite todo esto sin preguntar, no se asume ningún efecto de residuo del cultivo ' +
+        'anterior. También su producción esperada ' +
         '(precedingCrop.targetYield — si se omite, se asume el yieldMedium del catálogo, que ' +
         'puede no representar la campaña real del cultivo anterior); (3) la producción ' +
         'esperada del cultivo ACTUAL (currentCrop.targetYield — mismo criterio: si se omite, ' +
