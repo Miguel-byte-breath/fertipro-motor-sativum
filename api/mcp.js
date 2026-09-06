@@ -244,12 +244,19 @@ function crearServidor() {
         'esperada del cultivo ACTUAL (currentCrop.targetYield — mismo criterio: si se omite, ' +
         'se asume el yieldMedium del catálogo Sativum en vez del rendimiento real de la ' +
         'parcela); (4) si hay riego, el origen del agua (SIEX: superficial o subterránea — ' +
-        'necesario para documentarlo luego en export_report.riego.fuenteLabel) Y, SIEMPRE, si ' +
-        'tiene analítica real de agua de riego (water.no3MgL/pMgL/kMgL, mg/L) -- esto aplica en ' +
+        'necesario para documentarlo luego en export_report.riego.fuenteLabel) Y, SIEMPRE, ' +
+        'pregunta por el agua de riego con un tono sencillo y sin intimidar -- NO la plantees ' +
+        'como "¿tienes analítica de agua?" (suena a que hay que adjuntar un informe de ' +
+        'laboratorio completo). Pregunta algo como: "¿tienes algún dato de NO3, P o K de tu ' +
+        'agua de riego? Aunque sea solo uno de ellos, o un valor aproximado, es suficiente -- ' +
+        'guarda tú la analítica como anexo en tu propio expediente/documentación del plan, no ' +
+        'hace falta que me la entregues ahora". Pide los tres valores por separado ' +
+        '(water.no3MgL/pMgL/kMgL, mg/L) y deja claro que si falta alguno, simplemente no se ' +
+        'tiene en cuenta ese elemento, sin bloquear el cálculo de los demás -- esto aplica en ' +
         'CUALQUIER origen, superficial o subterráneo, no solo cuando hay rescate ArcGIS: no lo ' +
         'des por sabido solo porque ya preguntaste el origen. El rescate ArcGIS de ' +
         'estimate_soil_water_arcgis (arcgisNo3MgL/arcgisKMgL) es exclusivo de origen ' +
-        'subterráneo y NUNCA sustituye la pregunta por analítica real -- pregúntala primero, ' +
+        'subterráneo y NUNCA sustituye la pregunta por datos reales -- pregúntala primero, ' +
         'igual que con el suelo, y usa ArcGIS solo si falta el dato y el origen lo permite; ' +
         '(5) qué estrategia de ' +
         'fertilización quiere (strategy: SUFFICIENCY|REDUCED|MAINTENANCE|MAXIMUM) — pregunta ' +
