@@ -1,9 +1,9 @@
 {
-  "name": "fertipro",
+  "name": "fertipro-motor-sativum",
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "FertiPRO — Simulador de necesidades de nutrientes para cultivos agrícolas",
+  "description": "FertiPRO — Cálculo de necesidades de nutrientes para cultivos agrícolas",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

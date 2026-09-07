@@ -78,7 +78,7 @@ Si ya tienes un plan exportado en Excel, puedes recuperar el estado completo de 
 ### Instalación
 
 ```powershell
-git clone https://github.com/Miguel-byte-breath/fertipro.git
+git clone https://github.com/Miguel-byte-breath/fertipro-motor-sativum.git
 cd fertipro-api-sativum
 npm install
 ```
