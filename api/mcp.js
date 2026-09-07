@@ -205,7 +205,17 @@ function calcularNombreArchivoMcp({ titular, nombrePlan } = {}) {
 // esperada para el agente, no duplica esa validación.
 // ---------------------------------------------------------------------
 function crearServidor() {
-  const server = new McpServer({ name: 'fertipro-sativum', version: '1.0.0' })
+  const server = new McpServer(
+    { name: 'fertipro-sativum', version: '1.0.0' },
+    {
+      instructions:
+        'Usa este conector en cuanto el usuario pida planes de abonado/fertilización para una ' +
+        'organización o parcela -- que este conector esté disponible en la sesión ya es la señal ' +
+        'para usarlo directamente, sin necesidad de comprobar antes si Visual los tiene (Visual no ' +
+        'tiene hoy una entidad de plan de abonado). Flujo: getCropUnits (Visual, includeGeom:true) ' +
+        '-> group_crop_units -> search_crop -> calculate_npk -> export_report.',
+    },
+  )
 
   // ---- calculate_npk — misma entrada/salida que POST :calculate-npk ----
   server.registerTool(
@@ -222,11 +232,10 @@ function crearServidor() {
         'pasó por group_crop_units: reutiliza el sistemaExplotacion que ese grupo ya resolvió. ' +
         'Solo pregúntalo aquí si esta UC nunca pasó por group_crop_units (plan de una sola UC). ' +
         'Si es regadío (por group_crop_units o por esta pregunta), pregunta SIEMPRE ADEMÁS, como ' +
-        'paso propio y separado, por la dotación de riego (water.dotacionM3, m³/ha) -- ese dato ' +
-        'no está en Visual, así que nunca se asume: "0" es una respuesta válida (regadío sin ' +
-        'agua real que aportar ahora mismo), pero omitir la pregunta y dejar que se aplique el ' +
-        'valor del catálogo en silencio NO lo es (ver convención completa en water.dotacionM3 ' +
-        'del schema, más abajo); ' +
+        'paso propio y separado: ¿quiere indicar él mismo la dotación de riego (water.dotacionM3, ' +
+        'm³/ha), o prefiere que se aplique el valor predefinido del catálogo Sativum para este ' +
+        'cultivo? Ambas son respuestas válidas y hay que preguntarlo siempre, nunca asumir una ' +
+        'sin preguntar (ver convención completa en water.dotacionM3 del schema, más abajo); ' +
         '(2) si hay cultivo precedente relevante. OJO con los cultivos leñosos/permanentes ' +
         '(currentCrop.crop.plantSpeciesGroup === "TREES" u otro perenne): el motor SÍ aplica ' +
         'precedingCrop igual que a cualquier otro cultivo si se lo pasas -- no lo descartes tú ' +
@@ -286,17 +295,19 @@ function crearServidor() {
               'precedingCrop?, soil:{soilType,cec,pOlsen|arcgisPOlsen,kSoil|arcgisKSoil,...}, ' +
               'water?, strategy?, advancedOverrides? } — mismo contrato que ' +
               'POST /v1/sativum/fertilization-plans:calculate-npk. ' +
-              'water.dotacionM3 (m³/ha): NO tiene un valor por defecto seguro -- la dotación no ' +
-              'es un dato de Visual, así que este campo se rellena SIEMPRE a partir de lo que ' +
-              'diga el usuario, nunca del catálogo Sativum en silencio (currentCrop.crop.' +
-              'irrigation es solo orientativo si el usuario lo pide explícitamente). Convención ' +
-              'secano/regadío (el sistema en sí ya viene resuelto de group_crop_units o de la ' +
-              'pregunta (1) de arriba): secano → enviar water.dotacionM3: 0 siempre (no se ' +
-              'calcula aporte por riego); regadío → pregunta la dotación y envíala en ' +
-              'water.dotacionM3 -- si el usuario no la sabe, envía water.dotacionM3: 0 de forma ' +
-              'explícita (regadío sin agua real que aportar ahora mismo es una situación válida), ' +
-              'pero nunca omitas el campo dejando que se aplique el valor del catálogo sin que el ' +
-              'usuario lo haya confirmado. fechaInicioCiclo/fechaFinCiclo (YYYY-MM-DD, opcionales): ' +
+              'water.dotacionM3 (m³/ha): pregunta SIEMPRE, de forma proactiva, si el usuario ' +
+              'quiere indicar él mismo la dotación o prefiere el valor predefinido del catálogo ' +
+              'Sativum para este cultivo (currentCrop.crop.irrigation) -- las dos son respuestas ' +
+              'legítimas. Convención secano/regadío (el sistema en sí ya viene resuelto de ' +
+              'group_crop_units o de la pregunta (1) de arriba): secano → enviar ' +
+              'water.dotacionM3: 0 siempre (no se calcula aporte por riego); regadío → si el ' +
+              'usuario quiere dar su propio valor (incluido "0", regadío sin agua real que ' +
+              'aportar ahora mismo), envíalo en water.dotacionM3; si prefiere el valor del ' +
+              'catálogo, OMITE water.dotacionM3 -- el motor ya aplica automáticamente ' +
+              'cultivo.irrigation en ese caso (mismo criterio que la web de producción, ver ' +
+              'sativum-plan.js), así que no copies tú ese número a mano. En cualquier caso, ' +
+              'nunca dejes de preguntar y asumas un valor sin que el usuario haya elegido una de ' +
+              'las dos opciones. fechaInicioCiclo/fechaFinCiclo (YYYY-MM-DD, opcionales): ' +
               'esta tool las ignora por completo para el cálculo -- inclúyelas aquí solo como ' +
               'conveniencia de registro si ya las preguntaste; lo que de verdad hace falta es ' +
               'reenviarlas después en export_report.fechaInicioCiclo/fechaFinCiclo (ver la ' +
