@@ -120,11 +120,28 @@ function primeraVariedad(uc) {
  * (plantations[].patron) queda deliberadamente fuera del veto: además del
  * riesgo de asimetría en blanco ya documentado, Miguel confirma que en la
  * práctica es un campo que a menudo no se cumplimenta (ver CLAUDE.md).
+ *
+ * sistemaExplotacion (secano/regadío, 7-sep-2026, ver mcp.js/description de
+ * group_crop_units): NO se deriva de la dotación de riego -- se resuelve a
+ * partir de `uc.idExploitationSystem` tal cual lo trae Visual, con
+ * prioridad para `uc.sistemaExplotacionResuelto` ("secano"|"regadio") si el
+ * agente lo añadió a mano, porque idExploitationSystem puede faltar o no
+ * ser fiable (bug conocido en la propia Visual, confirmado por Miguel) y en
+ * ese caso el agente ya le ha preguntado al usuario UC por UC antes de
+ * llamar a esta tool. Con prioridad al valor resuelto, la partición dura de
+ * agruparLogica.js (que ya compara este campo, sin cambios ahí) deja de
+ * depender de un dato de Visual potencialmente ausente.
  */
 function ucAFilaPlana(uc, nif) {
   const variedad = primeraVariedad(uc)
   const cultivo = normalizarTexto(variedad?.variety) || null
   const subVariety = normalizarTexto(variedad?.subvariety) || null
+  const sistemaExplotacionResuelto =
+    uc?.sistemaExplotacionResuelto === 'secano' || uc?.sistemaExplotacionResuelto === 'regadio'
+      ? uc.sistemaExplotacionResuelto
+      : null
+  const sistemaExplotacion =
+    sistemaExplotacionResuelto ?? (uc?.idExploitationSystem != null ? String(uc.idExploitationSystem) : null)
 
   return {
     // --- campos que agruparLogica.js compara/usa ---
@@ -135,7 +152,7 @@ function ucAFilaPlana(uc, nif) {
     cultivoAnteriorFertipro: null,
     cultivoAnteriorSativum: null,
     municipio: normalizarTexto(uc?.municipio) || null,
-    sistemaExplotacion: uc?.idExploitationSystem != null ? String(uc.idExploitationSystem) : null,
+    sistemaExplotacion,
     sistemaCultivo: normalizarTexto(uc?.cropSystem) || null,
     anioPlantacion: extraerAnio(variedad?.startDate),
     refSuelo: null,
@@ -155,6 +172,7 @@ function ucAFilaPlana(uc, nif) {
     __subVariety: subVariety,
     __municipioOut: uc?.municipio ?? null,
     __cropSystemOut: uc?.cropSystem ?? null,
+    __sistemaExplotacionOut: sistemaExplotacion,
     __wkt: uc?.geom?.wkt ?? null,
   }
 }
@@ -253,6 +271,12 @@ function construirGrupoSalida(g, groupId, otrosDelBloqueSinFusionar = null) {
     subVariety: modaTexto(filas.map((f) => f.__subVariety)),
     municipio: filas[0].__municipioOut,
     cropSystem: filas[0].__cropSystemOut,
+    // Homogéneo por construcción dentro del grupo (partición dura, ver
+    // ucAFilaPlana/pasaParticionDura) -- basta con el valor de la primera fila.
+    // "secano"|"regadio" si el agente lo resolvió (Visual o pregunta al
+    // usuario); si no, el código crudo de idExploitationSystem de Visual, o
+    // null si tampoco estaba informado -- nunca se inventa un valor aquí.
+    sistemaExplotacion: filas[0].__sistemaExplotacionOut,
     recintosWkt,
     centroid,
     warnings,

@@ -218,7 +218,15 @@ function crearServidor() {
         'cultivo, vía el motor ITACyL/Sativum. Cada item del lote devuelve su propio ' +
         'status ("OK" o "BLOCKED") con warnings — no hace falta que todos los items estén ' +
         'completos para poder calcular los demás. Antes de calcular, pregunta SIEMPRE: ' +
-        '(1) si la parcela es de secano o regadío (ver water.dotacionM3 en items, más abajo); ' +
+        '(1) si la UC es de secano o regadío -- esto NO se pregunta aquí de nuevo si el plan ya ' +
+        'pasó por group_crop_units: reutiliza el sistemaExplotacion que ese grupo ya resolvió. ' +
+        'Solo pregúntalo aquí si esta UC nunca pasó por group_crop_units (plan de una sola UC). ' +
+        'Si es regadío (por group_crop_units o por esta pregunta), pregunta SIEMPRE ADEMÁS, como ' +
+        'paso propio y separado, por la dotación de riego (water.dotacionM3, m³/ha) -- ese dato ' +
+        'no está en Visual, así que nunca se asume: "0" es una respuesta válida (regadío sin ' +
+        'agua real que aportar ahora mismo), pero omitir la pregunta y dejar que se aplique el ' +
+        'valor del catálogo en silencio NO lo es (ver convención completa en water.dotacionM3 ' +
+        'del schema, más abajo); ' +
         '(2) si hay cultivo precedente relevante. OJO con los cultivos leñosos/permanentes ' +
         '(currentCrop.crop.plantSpeciesGroup === "TREES" u otro perenne): el motor SÍ aplica ' +
         'precedingCrop igual que a cualquier otro cultivo si se lo pasas -- no lo descartes tú ' +
@@ -278,12 +286,17 @@ function crearServidor() {
               'precedingCrop?, soil:{soilType,cec,pOlsen|arcgisPOlsen,kSoil|arcgisKSoil,...}, ' +
               'water?, strategy?, advancedOverrides? } — mismo contrato que ' +
               'POST /v1/sativum/fertilization-plans:calculate-npk. ' +
-              'water.dotacionM3 (m³/ha): si se omite, se usa el valor por defecto del catálogo ' +
-              'de cultivo (currentCrop.crop.irrigation). Convención secano/regadío: secano → ' +
-              'enviar water.dotacionM3: 0 (anula explícitamente el catálogo, no se calcula ' +
-              'aporte por riego); regadío con dotación conocida → enviar water.dotacionM3: ' +
-              '<m³/ha>; regadío sin dato conocido → omitir dotacionM3 y dejar el valor por ' +
-              'defecto del catálogo. fechaInicioCiclo/fechaFinCiclo (YYYY-MM-DD, opcionales): ' +
+              'water.dotacionM3 (m³/ha): NO tiene un valor por defecto seguro -- la dotación no ' +
+              'es un dato de Visual, así que este campo se rellena SIEMPRE a partir de lo que ' +
+              'diga el usuario, nunca del catálogo Sativum en silencio (currentCrop.crop.' +
+              'irrigation es solo orientativo si el usuario lo pide explícitamente). Convención ' +
+              'secano/regadío (el sistema en sí ya viene resuelto de group_crop_units o de la ' +
+              'pregunta (1) de arriba): secano → enviar water.dotacionM3: 0 siempre (no se ' +
+              'calcula aporte por riego); regadío → pregunta la dotación y envíala en ' +
+              'water.dotacionM3 -- si el usuario no la sabe, envía water.dotacionM3: 0 de forma ' +
+              'explícita (regadío sin agua real que aportar ahora mismo es una situación válida), ' +
+              'pero nunca omitas el campo dejando que se aplique el valor del catálogo sin que el ' +
+              'usuario lo haya confirmado. fechaInicioCiclo/fechaFinCiclo (YYYY-MM-DD, opcionales): ' +
               'esta tool las ignora por completo para el cálculo -- inclúyelas aquí solo como ' +
               'conveniencia de registro si ya las preguntaste; lo que de verdad hace falta es ' +
               'reenviarlas después en export_report.fechaInicioCiclo/fechaFinCiclo (ver la ' +
@@ -311,11 +324,29 @@ function crearServidor() {
         'a getCropUnits, pasa SIEMPRE includeGeom:true ademas de esas listas -- sin geometria, ' +
         'cada grupo devuelto sale con recintosWkt:[] y centroid:null (sin ningun error visible), ' +
         'y esto se propaga en silencio hasta el Excel final de export_report, cuya hoja ' +
-        '"Recintos (WKT)" saldria vacia.',
+        '"Recintos (WKT)" saldria vacia. SECANO/REGADÍO como partición dura: antes de llamar a ' +
+        'esta tool, para cada UC decide si es secano o regadío -- primero mirando ' +
+        'idExploitationSystem tal cual lo trae Visual; si ese campo viene vacío, o no te fías de ' +
+        'él (hay un bug conocido de Visual en este campo -- confirmado por Miguel, sep-2026: la ' +
+        'propia app de producción puede fallar al grabarlo), pregunta al usuario UC por UC ' +
+        '("¿esta parcela es de secano o de regadío?", nunca en bloque con otras preguntas) y, en ' +
+        'ese caso, añade en el objeto de esa UC el campo sistemaExplotacionResuelto: ' +
+        '"secano"|"regadio" con la respuesta -- NUNCA inventes ni copies un código numérico de ' +
+        'Visual que no te haya dado él. sistemaExplotacionResuelto, si está presente, tiene ' +
+        'prioridad sobre idExploitationSystem tanto para la partición dura (nunca se fusionan UC ' +
+        'de distinto sistema) como para el campo sistemaExplotacion que devuelve cada grupo. ' +
+        'Esto es independiente de la dotación de riego (m³/ha), que no forma parte de los datos ' +
+        'de Visual y se pregunta más adelante, en calculate_npk, solo para las UC/grupos ya ' +
+        'resueltos como regadío.',
       inputSchema: {
         cropUnits: z
           .array(z.record(z.any()))
-          .describe('UCs de Visual tal cual las devuelve getCropUnits.'),
+          .describe(
+            'UCs de Visual tal cual las devuelve getCropUnits, opcionalmente con ' +
+              'sistemaExplotacionResuelto: "secano"|"regadio" añadido por ti en cada UC donde ' +
+              'idExploitationSystem no esté informado o no sea fiable (ver descripción de la ' +
+              'tool) -- ese campo no lo pone Visual, lo añades tú tras preguntar al usuario.',
+          ),
         pageIndex: z.number().int().min(0).optional(),
         pageSize: z.number().int().min(1).max(100).optional(),
       },
@@ -514,8 +545,12 @@ function crearServidor() {
               '"Titular de la explotación" del Excel y el nombre del fichero de salida. NIF/CIF ' +
               'es preferente, pero Visual (getCropUnits/readCropUnit) no siempre lo expone -- ' +
               'cuando falte, envía SIEMPRE nombreRazonSocial (nombre de la persona física o ' +
-              'razón social) como identificador de rescate: sin ninguno de los dos, el fichero ' +
-              'se nombra "fertipro_plan_abonado_Sativum", sin ningún identificador de titular.',
+              'razón social) como identificador de rescate. Si NO tienes ni NIF/CIF ni ' +
+              'nombreRazonSocial (ninguno de los dos, ni en Visual ni dicho por el usuario), NO ' +
+              'llames a export_report todavía: pregunta primero al usuario por al menos uno de ' +
+              'los dos. Sin esa pregunta, el fichero se nombraría en silencio ' +
+              '"fertipro_plan_abonado_Sativum", sin ningún identificador de titular -- justo lo ' +
+              'que hay que evitar.',
           ),
         nombrePlan: z
           .string()
@@ -567,7 +602,9 @@ function crearServidor() {
               'que volver a consultar Visual). Si el plan viene de group_crop_units, usa su ' +
               'respuesta: idFincas (uno por elemento del array -> una entrada aquí por cada ' +
               'idFinca), y repite en cada entrada los campos compartidos del grupo (variety -> ' +
-              'variedad, municipio, cropSystem -> sistemaExplotacion); superficieHa por UC solo ' +
+              'variedad, municipio, sistemaExplotacion -> sistemaExplotacion -- OJO: NO uses ' +
+              'cropSystem aquí, es un concepto distinto -- invernadero/aire libre/sustrato SIEX, ' +
+              'no secano/regadío); superficieHa por UC solo ' +
               'si la tienes desagregada (ej. desde recintosWkt del propio grupo, cruzando por ' +
               '"UC ${idFinca}"), si no, déjala vacía -- no repartas totalSurface a ojo entre las ' +
               'UC. Si el plan es de una sola UC (sin pasar por group_crop_units), basta una ' +
