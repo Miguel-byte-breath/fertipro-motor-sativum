@@ -274,7 +274,11 @@ function crearServidor() {
         'des por sabido solo porque ya preguntaste el origen. El rescate ArcGIS de ' +
         'estimate_soil_water_arcgis (arcgisNo3MgL/arcgisKMgL) es exclusivo de origen ' +
         'subterráneo y NUNCA sustituye la pregunta por datos reales -- pregúntala primero, ' +
-        'igual que con el suelo, y usa ArcGIS solo si falta el dato y el origen lo permite; ' +
+        'igual que con el suelo, y usa ArcGIS solo si falta el dato y el origen lo permite. ' +
+        'Esto ya no es solo una recomendación de texto: si te saltas este paso, la propia tool ' +
+        'RECHAZA la llamada (ver la validación de items.water en el schema, más abajo) en vez de ' +
+        'calcular sin crédito de riego en silencio -- así que resuélvelo o deja constancia con ' +
+        'water.analiticaFaltante antes de llamar; ' +
         '(5) qué estrategia de ' +
         'fertilización quiere (strategy: SUFFICIENCY|REDUCED|MAINTENANCE|MAXIMUM) — pregunta ' +
         'esto ANTES de pedir analítica de suelo, no al revés: si la estrategia elegida ' +
@@ -290,6 +294,47 @@ function crearServidor() {
       inputSchema: {
         items: z
           .array(z.record(z.any()))
+          .superRefine((items, ctx) => {
+            // Guardarraíl estructural (2026-09-08): la instrucción de más abajo ya pide
+            // SIEMPRE la analítica de agua de riego, pero un texto no obliga a nadie a
+            // seguirlo -- un test real (Miguel, 2026-09-07/08) demostró que se puede
+            // preguntar el origen del agua y no llegar nunca a pedir NO3/P/K. Esta
+            // validación rechaza la llamada si, para una UC de regadío, no hay ni dato
+            // real (manual o, en N/K y solo con origen SUBTERRANEA, rescate ArcGIS) ni
+            // una confirmación explícita de que se preguntó y no hay dato -- P nunca
+            // tiene rescate ArcGIS, en ningún origen (ver sativum-plan.js).
+            items.forEach((item, idx) => {
+              const sistema = item?.sistemaExplotacionResuelto || item?.sistemaExplotacion
+              if (sistema !== 'regadio') return
+              const water = item?.water || {}
+              const subterranea = water.sourceType === 'SUBTERRANEA'
+              const faltante = Array.isArray(water.analiticaFaltante) ? water.analiticaFaltante : []
+              const tieneNo3 =
+                water.no3MgL != null || (subterranea && water.arcgisNo3MgL != null) || faltante.includes('no3')
+              const tieneP = water.pMgL != null || faltante.includes('p')
+              const tieneK =
+                water.kMgL != null || (subterranea && water.arcgisKMgL != null) || faltante.includes('k')
+              if (tieneNo3 && tieneP && tieneK) return
+              const faltan = [!tieneNo3 && 'no3', !tieneP && 'p', !tieneK && 'k'].filter(Boolean)
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: [idx, 'water'],
+                message:
+                  `Falta resolver la analítica de agua de riego (${faltan.join('/')}) de esta UC de ` +
+                  'regadío antes de calcular. Antes de reintentar: pregunta al usuario los valores que ' +
+                  'falten (water.no3MgL/pMgL/kMgL, mg/L)' +
+                  (subterranea
+                    ? ', o usa estimate_soil_water_arcgis (origen subterráneo: N y K admiten rescate ' +
+                      'ArcGIS -- water.arcgisNo3MgL/arcgisKMgL --, P nunca lo admite)'
+                    : ' (el rescate ArcGIS NO aplica a este origen -- no es subterráneo -- solo vale la ' +
+                      'analítica manual)') +
+                  '. Si el usuario confirma que no tiene alguno de esos datos, no lo omitas sin más: ' +
+                  `envía water.analiticaFaltante con los códigos que de verdad falten (ej. ["p"]) para ` +
+                  'dejar constancia de que se preguntó y no hay dato -- entonces el cálculo procede sin ' +
+                  'crédito de riego para ese elemento, sin bloquear el resto.',
+              })
+            })
+          })
           .describe(
             'Lote de unidades a calcular. Cada item: { currentCrop:{crop,targetYield?,cv?,...}, ' +
               'precedingCrop?, soil:{soilType,cec,pOlsen|arcgisPOlsen,kSoil|arcgisKSoil,...}, ' +
@@ -311,7 +356,10 @@ function crearServidor() {
               'esta tool las ignora por completo para el cálculo -- inclúyelas aquí solo como ' +
               'conveniencia de registro si ya las preguntaste; lo que de verdad hace falta es ' +
               'reenviarlas después en export_report.fechaInicioCiclo/fechaFinCiclo (ver la ' +
-              'description de esa tool).',
+              'description de esa tool). NOTA: si la UC es de regadío, esta tool RECHAZA la ' +
+              'llamada si la analítica de agua (no3MgL/pMgL/kMgL) no está resuelta ni con dato ' +
+              'real ni con water.analiticaFaltante explícito -- no es solo una recomendación de ' +
+              'texto, el propio schema lo obliga (ver validación más abajo).',
           ),
         pageIndex: z.number().int().min(0).optional(),
         pageSize: z.number().int().min(1).max(100).optional(),
