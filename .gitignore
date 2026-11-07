@@ -16,3 +16,4 @@ vite.config.js.timestamp-*.mjs
 
 # Contexto interno de sesión — no público
 CLAUDE.md
+CLAUDE.md.ORIGINAL-*
